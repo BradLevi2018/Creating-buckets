@@ -1,0 +1,96 @@
+import pandas as pd
+import os
+import shutil
+from datetime import datetime
+
+# Directory containing the Excel files
+directory = r"C:\Users\Samuel Kioko\Desktop\Recon\py\CRB-Bucketing"
+
+# Directory containing the older Excel files
+old_directory = r"C:\Users\Samuel Kioko\Desktop\Recon\py\CRB-Bucketing\bucketed_20231201"
+
+# Create a new directory for the bucketed files
+bucketed_directory = os.path.join(directory, 'bucketed_' + datetime.now().strftime('%Y%m%d'))
+os.makedirs(bucketed_directory, exist_ok=True)
+
+# Get a list of all Excel files in the directory
+files = [f for f in os.listdir(directory) if f.endswith(".xlsx") or f.endswith(".xls")]
+
+# Get a list of all older Excel files
+old_files = [f for f in os.listdir(old_directory) if f.endswith(".xlsx") or f.endswith(".xls")]
+
+# Sort the files by size (smallest to largest)
+files.sort(key=lambda f: os.path.getsize(os.path.join(directory, f)))
+
+# Iterate over the list of old files
+for old_filename in old_files:
+    # Get the first 12 characters of the old filename
+    old_file_name = old_filename[:12]
+
+    # Iterate over the list of new files
+    for filename in files:
+        # Get the first 12 characters of the new filename
+        new_file_name = filename[:12]
+
+        # Compare the old and new filenames
+        if old_file_name == new_file_name:
+            # Construct the full file path
+            file_path = os.path.join(directory, filename)
+
+            # Load the Excel file
+            df = pd.read_excel(file_path, dtype=str)
+
+            # Convert specific columns back to numerical type
+            df['Number of Days in Arrears'] = pd.to_numeric(df['Number of Days in Arrears'])
+            df['Current Balance'] = pd.to_numeric(df['Current Balance'])
+
+            # Convert 'Account Number' to string
+            df['Account Number'] = df['Account Number'].astype(str)
+
+            # Create a new Excel writer object
+            #output_file_path = os.path.join(bucketed_directory, filename.replace('.xlsx', '_Bucketed_560679.xlsx'))
+            if 'Bloom2' in filename:
+                output_file_path = os.path.join(bucketed_directory, filename.replace('.xlsx', '_Bucketed_560676.xlsx'))
+            else:
+                output_file_path = os.path.join(bucketed_directory, filename.replace('.xlsx', '_Bucketed_560679.xlsx'))
+
+            with pd.ExcelWriter(output_file_path, engine='openpyxl') as writer:
+                # Write the original data to the new file
+                df.to_excel(writer, sheet_name='Original', index=False)
+
+                # Split the data based on the conditions and write to new sheets
+                # df_new_listing = df[(df['Number of Days in Arrears'] == 0) & (df['Account Status'] == 'F')]
+                #  if not df_new_listing.empty:
+                #  df_new_listing.to_excel(writer, sheet_name='New Listing', index=False)
+                df_dpd_15 = df[(df['Number of Days in Arrears'] >= 15) & (df['Number of Days in Arrears'] <= 60)]
+                if not df_dpd_15.empty:
+                    df_dpd_15.to_excel(writer, sheet_name='DPD 15_60', index=False)
+
+                df_dpd_61_90 = df[(df['Number of Days in Arrears'] >= 61) & (df['Number of Days in Arrears'] <= 90)]
+                if not df_dpd_61_90.empty:
+                    df_dpd_61_90.to_excel(writer, sheet_name='DPD 61_90', index=False)
+
+                df_dpd_61 = df[df['Number of Days in Arrears'] >= 60]
+                if not df_dpd_61.empty:
+                    df_dpd_61.to_excel(writer, sheet_name='DPD>=60', index=False)
+
+                # Load the older Excel file
+                df_old = pd.read_excel(os.path.join(old_directory, old_filename), dtype=str)
+
+                # Convert specific columns back to numerical type
+                df_old['Number of Days in Arrears'] = pd.to_numeric(df_old['Number of Days in Arrears'])
+                df_old['Current Balance'] = pd.to_numeric(df_old['Current Balance'])
+
+                # Convert 'Account Number' to string in the old file
+                df_old['Account Number'] = df_old['Account Number'].astype(str)
+
+                # Create a DataFrame with 'Account Number' values from df_old that meet the conditions
+                df_old_filtered = df_old[(df_old['Current Balance'] > 0) & (df_old['Number of Days in Arrears'] >= 60)]
+
+                # Create a new sheet if the criteria are met
+                df_delisted = df[(df['Account Number'].isin(df_old_filtered['Account Number'])) & (df['Current Balance'] == 0)]
+                if not df_delisted.empty:
+                    df_delisted.to_excel(writer, sheet_name='Delisted', index=False)
+
+    # Print out the name of the updated file
+    print("Updated file:", output_file_path)
